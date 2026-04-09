@@ -1,3 +1,5 @@
+export const maxDuration = 60; // Keep the extended timeout just in case!
+
 export default async function handler(req, res) {
   // 1. Only allow POST requests
   if (req.method !== 'POST') {
@@ -13,7 +15,6 @@ export default async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Note: We use standard process.env here, NOT VITE_
         "api-subscription-key": process.env.SARVAM_API_KEY, 
       },
       body: JSON.stringify({
@@ -29,11 +30,17 @@ export default async function handler(req, res) {
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || "";
     
-    // Clean and parse the JSON before sending it back to the frontend
-    const clean = text.replace(/```json|```/g, "").trim();
-    const parsedData = JSON.parse(clean);
+    // 4. CLEAN THE LLM OUTPUT
+    // First, remove the <think> tags and everything inside them
+    let cleanText = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+    
+    // Then, remove any markdown code block wrappers (```json ... ```) and trim whitespace
+    cleanText = cleanText.replace(/```json|```/g, "").trim();
 
-    // 4. Send the result back to your React app
+    // Now it should be pure JSON
+    const parsedData = JSON.parse(cleanText);
+
+    // 5. Send the result back to your React app
     return res.status(200).json(parsedData);
 
   } catch (error) {
