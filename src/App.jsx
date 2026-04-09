@@ -432,7 +432,7 @@ export default function QuizCraft() {
 
         {/* Footer */}
         <p style={{ color: "#4B5563", fontSize: 12, marginTop: 24 }}>
-          Powered by Claude AI · Built with ❤️ for students & teachers
+           Built for students & teachers
         </p>
       </div>
     </div>
