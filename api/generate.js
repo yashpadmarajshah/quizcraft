@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   try {
     // 3. Make the call to Sarvam securely from the server
-    const response = await fetch("https://api.sarvam.ai/v1/chat/completions", {
+    const response = await fetch("[https://api.sarvam.ai/v1/chat/completions](https://api.sarvam.ai/v1/chat/completions)", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -30,21 +30,31 @@ export default async function handler(req, res) {
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || "";
     
-    // 4. CLEAN THE LLM OUTPUT
-    // First, remove the <think> tags and everything inside them
-    let cleanText = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+    // 4. ROBUST JSON EXTRACTION
+    // First, strip <think> tags if the model uses them
+    let cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
     
-    // Then, remove any markdown code block wrappers (```json ... ```) and trim whitespace
-    cleanText = cleanText.replace(/```json|```/g, "").trim();
+    // Find the first '[' and the last ']' to isolate the array
+    const firstBracket = cleanText.indexOf('[');
+    const lastBracket = cleanText.lastIndexOf(']');
 
-    // Now it should be pure JSON
-    const parsedData = JSON.parse(cleanText);
+    if (firstBracket === -1 || lastBracket === -1 || lastBracket < firstBracket) {
+      console.error("Raw LLM Output:", cleanText);
+      throw new Error("Could not locate a JSON array in the AI response.");
+    }
+
+    // Extract ONLY the array string
+    const jsonString = cleanText.substring(firstBracket, lastBracket + 1);
+
+    // Now it should be pure, safe JSON
+    const parsedData = JSON.parse(jsonString);
 
     // 5. Send the result back to your React app
     return res.status(200).json(parsedData);
 
   } catch (error) {
     console.error("API Error:", error);
-    return res.status(500).json({ error: "Failed to generate quiz" });
+    // Return a 500 error so the frontend can display the fallback error state gracefully
+    return res.status(500).json({ error: "Failed to parse generated quiz from AI" });
   }
 }
