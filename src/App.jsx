@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import * as mammoth from "mammoth";
 // Vite-Safe Worker Setup
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
@@ -122,7 +121,7 @@ function Timer({ seconds, total, onExpire }) {
   );
 }
 
-// ── Document Extraction Engines ───────────────────────────────────────────────
+// ── PDF Extraction Engine ──────────────────────────────────────────────────────
 async function extractTextFromPDF(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -138,12 +137,6 @@ async function extractTextFromPDF(file) {
   return text;
 }
 
-async function extractTextFromDocx(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
-  return result.value; 
-}
-
 // ── API call ──────────────────────────────────────────────────────────────────
 async function generateQuiz({ notes, type, count, difficulty, topic }) {
   const autoCount = count === "Auto"
@@ -156,30 +149,23 @@ async function generateQuiz({ notes, type, count, difficulty, topic }) {
     ? 'All questions must be True/False with exactly 2 options: "True" and "False".'
     : 'Mix of multiple-choice (4 options) and True/False (2 options) questions.';
 
-  const prompt = `You are an expert academic assessment creator. Your task is to generate exactly ${autoCount} strictly ${difficulty}-level quiz questions based ONLY on the provided Study Notes. 
+  const prompt = `You are a quiz generator. Generate exactly ${autoCount} strictly ${difficulty} difficulty quiz questions from the following study notes. 
+  Ensure the questions genuinely reflect a ${difficulty} level of academic rigor and critical thinking.
 
-Topic: "${topic || "General"}"
-Format: ${typeInstructions}
+Topic tag: "${topic || "General"}"
+Quiz type: ${typeInstructions}
 
-CRITICAL INSTRUCTIONS:
-1. Accuracy: Base all questions and correct answers strictly on the facts presented in the Study Notes. Do not invent outside information.
-2. Plausible Distractors: For multiple-choice questions, the wrong options must be highly plausible misconceptions or closely related concepts. Avoid silly or obvious wrong answers.
-3. Concise Explanations: Provide a 1-2 sentence explanation clarifying *why* the correct answer is right based on the text.
-4. Strict JSON: Return ONLY a raw JSON array. Do not wrap the output in markdown blocks (no \`\`\`json). Do not include any conversational text or <think> tags.
+For each question return a JSON object. Return ONLY a valid JSON array, no markdown, no extra text.
 
-JSON Schema Example format to follow:
-[
-  {
-    "id": 1,
-    "type": "mcq", 
-    "question": "Clear, objective question text?",
-    "options": ["Plausible Option A", "Plausible Option B", "Correct Option C", "Plausible Option D"],
-    "correct": "Correct Option C",
-    "explanation": "Brief explanation connecting back to the notes.",
-    "topic": "${topic || "General"}",
-    "difficulty": "${difficulty}"
-  }
-]
+Each object must have:
+- "id": number (1-based)
+- "type": "mcq" or "truefalse"
+- "question": string
+- "options": array of strings
+- "correct": string (exact text of correct option)
+- "explanation": string (1-2 sentence explanation)
+- "topic": "${topic || "General"}"
+- "difficulty": "${difficulty}"
 
 Study Notes:
 ${notes}`;
@@ -207,7 +193,7 @@ export default function QuizCraft() {
   const [quizType, setQuizType] = useState("MCQ");
   const [qCount, setQCount] = useState(10);
   const [difficulty, setDifficulty] = useState("Medium");
-  const [timePerQ, setTimePerQ] = useState(45);
+  const [timePerQ, setTimePerQ] = useState(45); // NEW: Independent Timer State
   const [topic, setTopic] = useState("");
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -247,16 +233,14 @@ export default function QuizCraft() {
 
     try {
       let extractedText = "";
-      
       if (file.type === "application/pdf") {
         extractedText = await extractTextFromPDF(file);
-      } else if (
-        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || 
-        file.name.endsWith('.docx')
-      ) {
-        extractedText = await extractTextFromDocx(file);
+      } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        setError("DOCX support is not yet implemented.");
+        setLoading(false);
+        return;
       } else {
-        setError("Unsupported file type. Please upload a PDF or DOCX file.");
+        setError("Unsupported file type. Please upload a PDF.");
         setLoading(false);
         return;
       }
@@ -269,7 +253,7 @@ export default function QuizCraft() {
       setNotes(extractedText);
     } catch (err) {
       console.error(err);
-      setError("Could not read the file. Please ensure it is a valid PDF or DOCX.");
+      setError("Could not read the file. Please paste the text manually.");
     } finally {
       setLoading(false);
       event.target.value = null; 
@@ -443,7 +427,7 @@ export default function QuizCraft() {
               <div>
                 <input
                   type="file"
-                  accept=".pdf,.docx"
+                  accept=".pdf"
                   onChange={handleFileUpload}
                   style={{ display: 'none' }}
                   id="file-upload"
@@ -454,7 +438,7 @@ export default function QuizCraft() {
                   padding: "6px 12px", fontSize: 12, border: `1px solid ${COLORS.sky}55`, color: COLORS.sky, cursor: loading ? "wait" : "pointer",
                   display: "inline-block"
                 }}>
-                  {loading ? "⏳ Parsing..." : "📎 Upload PDF or DOCX"}
+                  {loading ? "⏳ Parsing..." : "📎 Upload PDF"}
                 </label>
               </div>
             </div>
