@@ -39,22 +39,33 @@ export default async function handler(req, res) {
     const lastBracket = cleanText.lastIndexOf(']');
 
     if (firstBracket === -1 || lastBracket === -1 || lastBracket < firstBracket) {
-      console.error("Raw LLM Output:", cleanText);
+      console.error("Raw LLM Output missing brackets:", cleanText);
       throw new Error("Could not locate a JSON array in the AI response.");
     }
 
     // Extract ONLY the array string
-    const jsonString = cleanText.substring(firstBracket, lastBracket + 1);
+    let jsonString = cleanText.substring(firstBracket, lastBracket + 1);
 
-    // Now it should be pure, safe JSON
-    const parsedData = JSON.parse(jsonString);
+    // 5. SANITIZATION: Remove trailing commas (e.g., {"a": 1,} becomes {"a": 1})
+    // This stops the parser from crashing if the AI leaves a comma at the end of a list!
+    jsonString = jsonString.replace(/,\s*([\]}])/g, '$1');
 
-    // 5. Send the result back to your React app
+    // 6. Safe parsing with detailed error logging
+    let parsedData;
+    try {
+      parsedData = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error("❌ JSON PARSE FAILED!");
+      console.error("Exact string that crashed the parser:\n", jsonString);
+      throw new Error("AI generated malformed JSON (likely unescaped quotes).");
+    }
+
+    // 7. Send the result back to your React app
     return res.status(200).json(parsedData);
 
   } catch (error) {
-    console.error("API Error:", error);
+    console.error("API Error:", error.message);
     // Return a 500 error so the frontend can display the fallback error state gracefully
-    return res.status(500).json({ error: "Failed to parse generated quiz from AI" });
+    return res.status(500).json({ error: "Failed to generate quiz. The AI produced invalid formatting." });
   }
 }
