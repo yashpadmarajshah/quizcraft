@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   try {
     // 3. Make the call to Sarvam securely from the server
-    const response = await fetch("[https://api.sarvam.ai/v1/chat/completions](https://api.sarvam.ai/v1/chat/completions)", {
+    const response = await fetch("https://api.sarvam.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
