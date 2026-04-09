@@ -25,6 +25,14 @@ const DIFFICULTY_CONFIG = {
   Hard: { color: COLORS.rose, emoji: "💀" },
 };
 
+const TIME_OPTIONS = [
+  { label: "30s", value: 30 },
+  { label: "45s", value: 45 },
+  { label: "60s", value: 60 },
+  { label: "90s", value: 90 },
+  { label: "No Limit", value: 0 },
+];
+
 const QUIZ_TYPES = ["MCQ", "True/False", "Mixed"];
 const Q_COUNTS = [5, 10, 15, "Auto"];
 
@@ -141,7 +149,8 @@ async function generateQuiz({ notes, type, count, difficulty, topic }) {
     ? 'All questions must be True/False with exactly 2 options: "True" and "False".'
     : 'Mix of multiple-choice (4 options) and True/False (2 options) questions.';
 
-  const prompt = `You are a quiz generator. Generate exactly ${autoCount} ${difficulty} difficulty quiz questions from the following study notes.
+  const prompt = `You are a quiz generator. Generate exactly ${autoCount} strictly ${difficulty} difficulty quiz questions from the following study notes. 
+  Ensure the questions genuinely reflect a ${difficulty} level of academic rigor and critical thinking.
 
 Topic tag: "${topic || "General"}"
 Quiz type: ${typeInstructions}
@@ -184,6 +193,7 @@ export default function QuizCraft() {
   const [quizType, setQuizType] = useState("MCQ");
   const [qCount, setQCount] = useState(10);
   const [difficulty, setDifficulty] = useState("Medium");
+  const [timePerQ, setTimePerQ] = useState(45); // NEW: Independent Timer State
   const [topic, setTopic] = useState("");
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -195,8 +205,6 @@ export default function QuizCraft() {
   const [answers, setAnswers] = useState([]);
   const [showConfetti, setShowConfetti] = useState(false);
   const [timerKey, setTimerKey] = useState(0);
-
-  const timerSeconds = difficulty === "Easy" ? 60 : difficulty === "Medium" ? 45 : 30;
 
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.href.split("?")[0]}?quiz=${encodeURIComponent(btoa(JSON.stringify(questions)))}`
@@ -228,7 +236,6 @@ export default function QuizCraft() {
       if (file.type === "application/pdf") {
         extractedText = await extractTextFromPDF(file);
       } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-        // (You would call your Mammoth.js function here)
         setError("DOCX support is not yet implemented.");
         setLoading(false);
         return;
@@ -238,7 +245,6 @@ export default function QuizCraft() {
         return;
       }
 
-      // The Context Window Safeguard
       if (extractedText.length > 40000) {
         extractedText = extractedText.substring(0, 40000);
         setWarning(`Whoa there! Your file was massive. We truncated it to the first 40,000 characters to prevent timeouts and ensure a successful quiz generation.`);
@@ -250,7 +256,6 @@ export default function QuizCraft() {
       setError("Could not read the file. Please paste the text manually.");
     } finally {
       setLoading(false);
-      // Reset file input so the same file can be uploaded again if needed
       event.target.value = null; 
     }
   };
@@ -417,7 +422,6 @@ export default function QuizCraft() {
         <div style={S.card}>
           {/* Notes */}
           <div style={{ marginBottom: 20 }}>
-            {/* The UI Element */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <label style={{ ...S.label, marginBottom: 0 }}>📄 PASTE OR UPLOAD STUDY NOTES</label>
               <div>
@@ -487,13 +491,25 @@ export default function QuizCraft() {
             </div>
           </div>
 
-          {/* Difficulty */}
-          <div style={{ marginBottom: 28 }}>
-            <label style={S.label}>💪 DIFFICULTY</label>
+          {/* Question Difficulty */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={S.label}>💪 QUESTION DIFFICULTY</label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {Object.entries(DIFFICULTY_CONFIG).map(([d, cfg]) => (
                 <button key={d} style={S.chip(difficulty === d, cfg.color)} onClick={() => setDifficulty(d)}>
                   {cfg.emoji} {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Time Per Question */}
+          <div style={{ marginBottom: 28 }}>
+            <label style={S.label}>⏱️ TIME PER QUESTION</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {TIME_OPTIONS.map(t => (
+                <button key={t.label} style={S.chip(timePerQ === t.value, COLORS.emerald)} onClick={() => setTimePerQ(t.value)}>
+                  {t.label}
                 </button>
               ))}
             </div>
@@ -547,7 +563,7 @@ export default function QuizCraft() {
               { label: "Questions", value: questions.length, icon: "❓" },
               { label: "Type", value: quizType, icon: "🎯" },
               { label: "Difficulty", value: difficulty, icon: DIFFICULTY_CONFIG[difficulty].emoji },
-              { label: "Timer", value: `${timerSeconds}s/Q`, icon: "⏱" },
+              { label: "Timer", value: timePerQ > 0 ? `${timePerQ}s/Q` : "None", icon: "⏱" },
             ].map(s => (
               <div key={s.label} style={{
                 flex: 1, minWidth: 100, background: "#0F0A1E",
@@ -623,7 +639,17 @@ export default function QuizCraft() {
                 </span>
                 {q.topic && <span style={S.tag(COLORS.sky)}>🏷 {q.topic}</span>}
               </div>
-              <Timer key={timerKey} seconds={timerSeconds} total={timerSeconds} onExpire={handleTimeUp} />
+              {timePerQ > 0 ? (
+                <Timer key={timerKey} seconds={timePerQ} total={timePerQ} onExpire={handleTimeUp} />
+              ) : (
+                <div style={{
+                  background: `${COLORS.emerald}11`, border: `1px solid ${COLORS.emerald}33`,
+                  borderRadius: 8, padding: "4px 12px", fontFamily: "'Outfit', sans-serif",
+                  fontWeight: 700, color: COLORS.emerald, fontSize: 13,
+                }}>
+                  ⏱ No Limit
+                </div>
+              )}
             </div>
 
             {/* Progress bar */}
