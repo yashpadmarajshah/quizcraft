@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+// Vite-Safe Worker Setup
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 // ── Palette & helpers ────────────────────────────────────────────────────────
 const COLORS = {
@@ -108,6 +113,22 @@ function Timer({ seconds, total, onExpire }) {
   );
 }
 
+// ── PDF Extraction Engine ──────────────────────────────────────────────────────
+async function extractTextFromPDF(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = "";
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item.str).join(" ");
+    text += pageText + "\n";
+  }
+  
+  return text;
+}
+
 // ── API call ──────────────────────────────────────────────────────────────────
 async function generateQuiz({ notes, type, count, difficulty, topic }) {
   const autoCount = count === "Auto"
@@ -140,7 +161,6 @@ Each object must have:
 Study Notes:
 ${notes}`;
 
-  // This now calls your secure Vercel Serverless Function
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: {
@@ -159,7 +179,7 @@ ${notes}`;
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function QuizCraft() {
-  const [screen, setScreen] = useState("home"); // home | quiz | attempt | results | share
+  const [screen, setScreen] = useState("home"); 
   const [notes, setNotes] = useState("");
   const [quizType, setQuizType] = useState("MCQ");
   const [qCount, setQCount] = useState(10);
@@ -168,6 +188,7 @@ export default function QuizCraft() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState(null);
   const [revealed, setRevealed] = useState(false);
@@ -177,12 +198,10 @@ export default function QuizCraft() {
 
   const timerSeconds = difficulty === "Easy" ? 60 : difficulty === "Medium" ? 45 : 30;
 
-  // Encode quiz to shareable URL
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.href.split("?")[0]}?quiz=${encodeURIComponent(btoa(JSON.stringify(questions)))}`
     : "";
 
-  // Load quiz from URL on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -196,12 +215,13 @@ export default function QuizCraft() {
     }
   }, []);
 
-  // Add this inside your QuizCraft component
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    setLoading(true); // Show a spinner while parsing
+    setLoading(true);
+    setError("");
+    setWarning("");
 
     try {
       let extractedText = "";
@@ -209,14 +229,29 @@ export default function QuizCraft() {
         extractedText = await extractTextFromPDF(file);
       } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         // (You would call your Mammoth.js function here)
+        setError("DOCX support is not yet implemented.");
+        setLoading(false);
+        return;
+      } else {
+        setError("Unsupported file type. Please upload a PDF.");
+        setLoading(false);
+        return;
       }
 
-      // Put the extracted text right into your existing text box
-      setNotes(extractedText); 
+      // The Context Window Safeguard
+      if (extractedText.length > 40000) {
+        extractedText = extractedText.substring(0, 40000);
+        setWarning(`Whoa there! Your file was massive. We truncated it to the first 40,000 characters to prevent timeouts and ensure a successful quiz generation.`);
+      }
+
+      setNotes(extractedText);
     } catch (err) {
+      console.error(err);
       setError("Could not read the file. Please paste the text manually.");
     } finally {
       setLoading(false);
+      // Reset file input so the same file can be uploaded again if needed
+      event.target.value = null; 
     }
   };
 
@@ -226,6 +261,7 @@ export default function QuizCraft() {
       return;
     }
     setError("");
+    setWarning("");
     setLoading(true);
     try {
       const qs = await generateQuiz({ notes, type: quizType, count: qCount, difficulty, topic });
@@ -381,12 +417,41 @@ export default function QuizCraft() {
         <div style={S.card}>
           {/* Notes */}
           <div style={{ marginBottom: 20 }}>
-            <label style={S.label}>📄 PASTE YOUR STUDY NOTES</label>
+            {/* The UI Element */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <label style={{ ...S.label, marginBottom: 0 }}>📄 PASTE OR UPLOAD STUDY NOTES</label>
+              <div>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  id="file-upload"
+                  disabled={loading}
+                />
+                <label htmlFor="file-upload" style={{
+                  ...S.btn(`${COLORS.sky}22`, false),
+                  padding: "6px 12px", fontSize: 12, border: `1px solid ${COLORS.sky}55`, color: COLORS.sky, cursor: loading ? "wait" : "pointer",
+                  display: "inline-block"
+                }}>
+                  {loading ? "⏳ Parsing..." : "📎 Upload PDF"}
+                </label>
+              </div>
+            </div>
+            
             <textarea
               rows={6} value={notes} onChange={e => setNotes(e.target.value)}
               placeholder="Paste any text — lecture notes, textbook chapters, articles…"
               style={{ ...S.input, resize: "vertical", lineHeight: 1.6 }}
+              disabled={loading}
             />
+            
+            {warning && (
+              <div style={{ background: `${COLORS.amber}22`, border: `1px solid ${COLORS.amber}44`, borderRadius: 10, padding: "10px 16px", marginTop: 8, color: COLORS.amber, fontSize: 13 }}>
+                ⚠️ {warning}
+              </div>
+            )}
+            
             <div style={{ fontSize: 11, color: "#6B7280", marginTop: 4 }}>
               {notes.trim().split(/\s+/).filter(Boolean).length} words
             </div>
@@ -447,7 +512,7 @@ export default function QuizCraft() {
               opacity: loading ? 0.7 : 1,
             }}>
             {loading ? (
-              <span>✨ Generating your quiz…</span>
+              <span>✨ Processing…</span>
             ) : (
               <span>⚡ Generate Quiz</span>
             )}
