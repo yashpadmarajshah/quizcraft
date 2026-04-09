@@ -196,6 +196,30 @@ export default function QuizCraft() {
     }
   }, []);
 
+  // Add this inside your QuizCraft component
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setLoading(true); // Show a spinner while parsing
+
+    try {
+      let extractedText = "";
+      if (file.type === "application/pdf") {
+        extractedText = await extractTextFromPDF(file);
+      } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        // (You would call your Mammoth.js function here)
+      }
+
+      // Put the extracted text right into your existing text box
+      setNotes(extractedText); 
+    } catch (err) {
+      setError("Could not read the file. Please paste the text manually.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!notes.trim() || notes.trim().length < 50) {
       setError("Please paste at least 50 characters of study notes.");
