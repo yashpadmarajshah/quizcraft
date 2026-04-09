@@ -18,8 +18,8 @@ export default async function handler(req, res) {
         "api-subscription-key": process.env.SARVAM_API_KEY, 
       },
       body: JSON.stringify({
-        model: "sarvam-m",
-        max_tokens: 4000,
+        model: "sarvam-30b",
+        max_tokens: 50000,
         messages: [
           { role: "system", content: "You are a quiz generator. Always respond with valid JSON only. No markdown, no extra text." },
           { role: "user", content: prompt }
